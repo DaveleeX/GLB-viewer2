@@ -1,0 +1,51 @@
+:root {
+  /* Surfaces */
+  --bg-canvas: #05070c;
+  --bg-app: #080b12;
+  --bg-panel: rgba(12, 16, 26, 0.78);
+  --bg-panel-solid: #0d1220;
+  --bg-raised: rgba(255, 255, 255, 0.05);
+  --bg-raised-hover: rgba(255, 255, 255, 0.1);
+  --bg-sunken: rgba(0, 0, 0, 0.32);
+
+  /* Text */
+  --text: #e8eefc;
+  --text-dim: rgba(206, 218, 240, 0.66);
+  --text-faint: rgba(190, 205, 232, 0.4);
+
+  /* Lines */
+  --line: rgba(255, 255, 255, 0.1);
+  --line-strong: rgba(255, 255, 255, 0.18);
+
+  /* Accents */
+  --accent: #4a9bff;
+  --accent-hot: #6fb2ff;
+  --accent-soft: rgba(74, 155, 255, 0.16);
+  --accent-line: rgba(74, 155, 255, 0.45);
+  --success: #57d9a3;
+  --warn: #f5c451;
+  --danger: #ff6b6b;
+
+  /* Per-group hues, carried over from the source viewer's colour coding */
+  --g-render: #a8d8f0;
+  --g-light: #8cb8ff;
+  --g-camera: #7fdcd6;
+  --g-env: #e8c870;
+  --g-post: #f0a0c8;
+  --g-scene: #a4d8a4;
+  --g-color: #c8b8ff;
+  --g-anim: #f0a860;
+  --g-info: #b0bed8;
+
+  /* Metrics */
+  --sidebar-w: 328px;
+  --topbar-h: 48px;
+  --r-sm: 5px;
+  --r-md: 9px;
+  --r-lg: 14px;
+  --blur: blur(18px) saturate(140%);
+  --shadow-panel: 0 12px 40px rgba(0, 0, 0, 0.55);
+  --font: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Mono', Consolas, 'Roboto Mono', monospace;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}

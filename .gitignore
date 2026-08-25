@@ -1,0 +1,8 @@
+node_modules
+dist
+public/vendor
+test-assets
+smoke-out
+.DS_Store
+*.local
+.vite

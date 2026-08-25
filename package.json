@@ -1,0 +1,28 @@
+{
+  "name": "model-viewer-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A general-purpose web 3D model viewer built on three.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test:assets": "node scripts/make-test-assets.mjs",
+    "hdri": "node scripts/build-hdri.mjs",
+    "smoke": "node scripts/make-test-assets.mjs && node scripts/smoke.mjs",
+    "decoders": "node scripts/copy-decoders.mjs",
+    "postinstall": "node scripts/copy-decoders.mjs"
+  },
+  "dependencies": {
+    "@sparkjsdev/spark": "^2.1.0",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4",
+    "playwright": "^1.62.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2"
+  }
+}

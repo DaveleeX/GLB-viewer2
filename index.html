@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="description" content="通用 3D 模型预览器 — 支持 glTF/GLB、OBJ、FBX、STL、PLY、3MF、DAE、USDZ 与高斯泼溅资产" />
+    <title>Model Viewer · 通用模型预览器</title>
+  </head>
+
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="i-upload" viewBox="0 0 24 24">
+        <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
+      </symbol>
+      <symbol id="i-camera" viewBox="0 0 24 24">
+        <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.2l1.2-2h8.2l1.2 2h2.2A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" />
+        <circle cx="12" cy="13" r="3.4" />
+      </symbol>
+      <symbol id="i-video" viewBox="0 0 24 24">
+        <rect x="3" y="6" width="12" height="12" rx="2" />
+        <path d="M15 10.5 21 7v10l-6-3.5z" />
+      </symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24">
+        <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+      </symbol>
+      <symbol id="i-reset" viewBox="0 0 24 24">
+        <path d="M20 12a8 8 0 1 1-2.6-5.9M20 4v4h-4" />
+      </symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.8 19 12 7 19.2z" /></symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" /></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></symbol>
+      <symbol id="i-panel" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" />
+      </symbol>
+      <symbol id="i-cube" viewBox="0 0 24 24">
+        <path d="M12 2.8 21 7.4v9.2L12 21.2 3 16.6V7.4z" /><path d="M3 7.4 12 12m0 0 9-4.6M12 12v9.2" />
+      </symbol>
+    </svg>
+
+    <div id="app">
+      <canvas id="viewport"></canvas>
+
+      <!-- Empty state / primary upload call to action -->
+      <div id="empty-state" class="empty-state">
+        <div class="empty-card">
+          <svg class="empty-icon"><use href="#i-cube" /></svg>
+          <h1>通用模型预览器</h1>
+          <p class="empty-sub">拖放模型文件到此处，或选择文件开始预览</p>
+          <div class="empty-actions">
+            <button id="empty-open" class="btn btn-primary">
+              <svg class="ico"><use href="#i-upload" /></svg>
+              选择模型文件
+            </button>
+            <button id="empty-sample" class="btn">加载示例场景</button>
+          </div>
+          <p class="empty-formats">
+            glTF · GLB · OBJ · FBX · STL · PLY · 3MF · DAE · USDZ · VOX
+            <br />
+            高斯泼溅 SPZ · SPLAT · KSPLAT · SOG · PLY
+            <br />
+            <span class="dim">支持多选：模型 + .bin + 贴图 / .obj + .mtl，也可直接拖入整个文件夹</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Drag hover overlay -->
+      <div id="drop-overlay" class="drop-overlay"><div class="drop-inner">松开以载入模型</div></div>
+
+      <!-- Top bar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <span class="brand"><svg class="ico"><use href="#i-cube" /></svg>Model Viewer</span>
+          <span id="model-name" class="model-name"></span>
+        </div>
+        <div class="topbar-right">
+          <button id="btn-open" class="btn btn-ghost" title="打开模型">
+            <svg class="ico"><use href="#i-upload" /></svg><span class="btn-label">打开</span>
+          </button>
+          <button id="btn-reset" class="btn btn-ghost" title="重置视角">
+            <svg class="ico"><use href="#i-reset" /></svg>
+          </button>
+          <button id="btn-shot" class="btn btn-ghost" title="截图 (PNG)">
+            <svg class="ico"><use href="#i-camera" /></svg>
+          </button>
+          <button id="btn-record" class="btn btn-ghost" title="录制视频">
+            <svg class="ico"><use href="#i-video" /></svg>
+          </button>
+          <button id="btn-fullscreen" class="btn btn-ghost" title="全屏">
+            <svg class="ico"><use href="#i-expand" /></svg>
+          </button>
+          <button id="btn-sidebar" class="btn btn-ghost" title="显示/隐藏面板 (Tab)">
+            <svg class="ico"><use href="#i-panel" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- Settings sidebar (panels injected at runtime) -->
+      <aside id="sidebar" class="sidebar"></aside>
+
+      <!-- View cube / orientation presets -->
+      <div id="view-presets" class="view-presets"></div>
+
+      <!-- Animation timeline -->
+      <div id="timeline" class="timeline hidden"></div>
+
+      <!-- Stats readout -->
+      <div id="stats" class="stats"></div>
+
+      <div id="progress" class="progress hidden">
+        <div class="progress-card">
+          <div class="spinner"></div>
+          <div class="progress-text">载入中…</div>
+          <div class="progress-track"><div class="progress-fill"></div></div>
+        </div>
+      </div>
+
+      <div id="toasts" class="toasts"></div>
+
+      <input id="file-input" type="file" multiple hidden />
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
