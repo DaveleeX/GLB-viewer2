@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Viewer } from '../core/Viewer';
+import type { HandheldHost } from './handheldHost';
 import { ENV_PRESETS, HDRI_PREFIX, HDRI_PRESETS, presetThumbCss } from '../core/environments';
 import type { BackgroundMode, ProjectionMode, QualityTier, ShadingMode, ToneMappingName } from '../core/settings';
 import {
@@ -9,6 +10,7 @@ import {
   type ChannelDef,
   type IsolatorId,
 } from '../core/channels';
+import { mountHandheldPanel } from './handheldPanel';
 import {
   addButtons,
   addColor,
@@ -36,9 +38,12 @@ export function buildPanels(
   sidebar: HTMLElement,
   viewer: Viewer,
   notify: (message: string, kind?: 'info' | 'error' | 'success') => void,
+  handheld: HandheldHost,
 ): PanelsApi {
   const s = viewer.settings;
   let refreshChannels = (): void => {};
+  let splatCleanup: HTMLElement;
+  let splatFloaterSlider: SliderHandle;
 
   // ------------------------------------------------------------------ scene
 
@@ -141,6 +146,21 @@ export function buildPanels(
         viewer.applyScene();
       },
     });
+
+    splatCleanup = el('div', 'hidden');
+    addDivider(splatCleanup);
+    addSubhead(splatCleanup, '高斯泼溅');
+    splatFloaterSlider = addSlider(splatCleanup, {
+      label: '清理浮点',
+      min: 0,
+      max: 100,
+      step: 1,
+      value: Math.round(s.scene.splatFloater * 100),
+      suffix: '%',
+      onInput: (value) => viewer.setSplatFloaterTrim(value / 100),
+    });
+    addNote(splatCleanup, '只隐藏远离主体的高斯球，不重新训练。0% 为原始结果。');
+    b.append(splatCleanup);
 
     addDivider(b);
     addToggle(b, {
@@ -585,6 +605,7 @@ export function buildPanels(
 
     addNote(b, '近裁剪过大会切掉靠近镜头的部分；远/近比值过大会让重叠面闪烁、前后翻。');
     addButtons(b, [{ label: '重新框选模型', onClick: () => viewer.frameModel() }]);
+    mountHandheldPanel(b, handheld);
   }
 
   // ------------------------------------------------------------ post effects
@@ -855,6 +876,7 @@ export function buildPanels(
     const stats = viewer.stats;
     if (!stats) {
       infoPanel.setNote('');
+      splatCleanup.classList.add('hidden');
       return;
     }
 
@@ -871,6 +893,8 @@ export function buildPanels(
       ['尺寸', `${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}`],
     ];
     if (stats.splats > 0) entries.splice(1, 0, ['高斯点', stats.splats.toLocaleString()]);
+    splatCleanup.classList.toggle('hidden', stats.splats <= 0);
+    splatFloaterSlider.set(Math.round(s.scene.splatFloater * 100));
 
     for (const [key, value] of entries) {
       statsList.append(el('dt', undefined, key), el('dd', undefined, value));

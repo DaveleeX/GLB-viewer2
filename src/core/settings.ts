@@ -104,6 +104,8 @@ export interface SceneSettings {
   doubleSided: boolean;
   /** Isolates one PBR / geometry channel; `null` uses `shading`. */
   isolator: IsolatorId | null;
+  /** 0 = show all Gaussians; 1 = hide far floaters around a splat model. */
+  splatFloater: number;
 }
 
 export interface ViewerSettings {
@@ -201,6 +203,7 @@ export function defaultSettings(tier: QualityTier): ViewerSettings {
       flatShading: false,
       doubleSided: false,
       isolator: null,
+      splatFloater: 0,
     },
   };
 }

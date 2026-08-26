@@ -1,10 +1,15 @@
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/panels.css';
+import './styles/handheld-panel.css';
 import { App } from './ui/App';
+import { startRemotePad } from './ui/remotePad';
 import WebGL from 'three/addons/capabilities/WebGL.js';
 
-if (!WebGL.isWebGL2Available()) {
+const remoteRoom = new URLSearchParams(location.search).get('cam');
+if (remoteRoom) {
+  void startRemotePad(remoteRoom);
+} else if (!WebGL.isWebGL2Available()) {
   document.body.innerHTML = `
     <div style="display:grid;place-items:center;height:100%;padding:24px;text-align:center;color:#e8eefc;font-family:system-ui">
       <div>

@@ -125,6 +125,27 @@ body.sidebar-collapsed .sidebar {
   margin-top: 3px;
 }
 
+.handheld-box {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.handheld-box[hidden] {
+  display: none;
+}
+
+.handheld-qr {
+  width: 240px;
+  height: 240px;
+  margin: 0 auto;
+  border-radius: 10px;
+  background: #f4f7ff;
+}
+
 /* --------------------------------------------------------------- controls */
 
 .ctrl {

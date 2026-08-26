@@ -3,6 +3,7 @@ import { ModelLoader } from '../loaders/ModelLoader';
 import { Recorder, downloadBlob } from '../core/Recorder';
 import { createDemoScene } from '../core/demoScene';
 import { buildPanels, type PanelsApi } from './buildPanels';
+import { HandheldHost } from './handheldHost';
 import { el } from './controls';
 import {
   ENV_EXTENSIONS,
@@ -15,9 +16,32 @@ import {
   filesFromInput,
   type NamedFile,
 } from '../loaders/fileMap';
+import { isSketchfabInput, resolveSketchfabModel } from '../loaders/sketchfab';
+import {
+  VIDEO_EXTENSIONS,
+  checkGsEnvironment,
+  isVideoFileName,
+  startSplatFromVideo,
+  translateGsError,
+  type GsJob,
+  type GsQuality,
+} from '../loaders/gsGenerate';
 
-const ACCEPT = [...MODEL_EXTENSIONS, ...SPLAT_EXTENSIONS, 'bin', 'mtl', 'png', 'jpg', 'jpeg', 'webp', 'ktx2', 'basis']
+const ACCEPT = [
+  ...MODEL_EXTENSIONS,
+  ...SPLAT_EXTENSIONS,
+  ...VIDEO_EXTENSIONS,
+  'bin',
+  'mtl',
+  'png',
+  'jpg',
+  'jpeg',
+  'webp',
+  'ktx2',
+  'basis',
+]
   .map((ext) => `.${ext}`)
+  .concat(['video/mp4', 'video/quicktime', 'video/webm'])
   .join(',');
 
 const VIEW_BUTTONS: Array<{ id: ViewDirection; label: string; title: string }> = [
@@ -34,6 +58,7 @@ export class App {
   private readonly loader: ModelLoader;
   private readonly recorder: Recorder;
   private readonly panels: PanelsApi;
+  private readonly handheld: HandheldHost;
 
   private readonly canvas = byId<HTMLCanvasElement>('viewport');
   private readonly emptyState = byId('empty-state');
@@ -45,24 +70,38 @@ export class App {
   private readonly progress = byId('progress');
   private readonly modelName = byId('model-name');
   private readonly fileInput = byId<HTMLInputElement>('file-input');
+  private readonly openDialog = byId('open-dialog');
+  private readonly gsDialog = byId('gs-dialog');
+  private readonly sketchfabStage = byId('sketchfab-stage');
+  private readonly sketchfabFrame = byId<HTMLIFrameElement>('sketchfab-frame');
 
   private dragDepth = 0;
   private scrubbing = false;
   private fpsFrames = 0;
   private fpsSince = performance.now();
   private fpsLabel = '';
+  private sketchfabActive = false;
+  private gsJob: GsJob | null = null;
 
   constructor() {
     this.viewer = new Viewer(this.canvas);
     this.loader = new ModelLoader(this.viewer.renderer);
     this.recorder = new Recorder(this.canvas);
-    this.panels = buildPanels(this.sidebar, this.viewer, (m, k) => this.toast(m, k));
+    this.handheld = new HandheldHost(this.viewer, {
+      screenshot: () => this.screenshot(),
+      toggleRecording: () => this.toggleRecording(),
+      isRecording: () => this.recorder.isRecording,
+      notify: (message, kind) => this.toast(message, kind),
+    });
+    this.panels = buildPanels(this.sidebar, this.viewer, (m, k) => this.toast(m, k), this.handheld);
 
     this.fileInput.accept = ACCEPT;
 
     this.buildViewPresets();
     this.buildTimeline();
     this.wireToolbar();
+    this.wireOpenDialog();
+    this.wireGsDialog();
     this.wireDragAndDrop();
     this.wireKeyboard();
     this.wireViewerEvents();
@@ -115,10 +154,18 @@ export class App {
   }
 
   private wireToolbar(): void {
-    byId('btn-open').addEventListener('click', () => this.fileInput.click());
+    byId('btn-open').addEventListener('click', () => this.openAddDialog('file'));
+    byId('btn-sketchfab').addEventListener('click', () => this.openAddDialog('sketchfab'));
+    byId('btn-close-sketchfab').addEventListener('click', () => this.returnToHome());
     byId('empty-open').addEventListener('click', () => this.fileInput.click());
     byId('empty-sample').addEventListener('click', () => this.loadDemo());
-    byId('btn-reset').addEventListener('click', () => this.viewer.frameModel());
+    byId('btn-reset').addEventListener('click', () => {
+      if (this.sketchfabActive) {
+        this.reloadSketchfab();
+        return;
+      }
+      this.viewer.frameModel();
+    });
     byId('btn-shot').addEventListener('click', () => void this.screenshot());
     byId('btn-record').addEventListener('click', () => void this.toggleRecording());
     byId('btn-fullscreen').addEventListener('click', () => void this.toggleFullscreen());
@@ -128,6 +175,137 @@ export class App {
       if (this.fileInput.files?.length) void this.handleFiles(filesFromInput(this.fileInput.files));
       this.fileInput.value = '';
     });
+  }
+
+  private wireOpenDialog(): void {
+    const emptyFileBtn = byId('source-file');
+    const emptyLinkBtn = byId('source-sketchfab');
+    const dialogFileBtn = byId('dialog-source-file');
+    const dialogLinkBtn = byId('dialog-source-sketchfab');
+
+    emptyFileBtn.addEventListener('click', () => this.setEmptySource('file'));
+    emptyLinkBtn.addEventListener('click', () => this.setEmptySource('sketchfab'));
+    dialogFileBtn.addEventListener('click', () => this.setDialogSource('file'));
+    dialogLinkBtn.addEventListener('click', () => this.setDialogSource('sketchfab'));
+
+    byId('open-dialog-close').addEventListener('click', () => this.closeAddDialog());
+    this.openDialog.querySelector('[data-dialog-dismiss]')?.addEventListener('click', () => this.closeAddDialog());
+    byId('dialog-open-files').addEventListener('click', () => {
+      this.closeAddDialog();
+      this.fileInput.click();
+    });
+
+    byId<HTMLFormElement>('empty-sketchfab-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      void this.loadSketchfab(byId<HTMLInputElement>('empty-sketchfab-url').value);
+    });
+    byId<HTMLFormElement>('dialog-sketchfab-form').addEventListener('submit', (event) => {
+      event.preventDefault();
+      void this.loadSketchfab(byId<HTMLInputElement>('dialog-sketchfab-url').value);
+    });
+  }
+
+  private wireGsDialog(): void {
+    const skip = () => this.closeGsDialog(false);
+    byId('gs-dialog-close').addEventListener('click', skip);
+    this.gsDialog.querySelector('[data-gs-dismiss]')?.addEventListener('click', skip);
+    byId('gs-dialog-skip').addEventListener('click', skip);
+    byId('gs-dialog-start').addEventListener('click', () => this.closeGsDialog(true));
+    byId('progress-cancel').addEventListener('click', () => this.gsJob?.abort());
+    byId('progress-finish').addEventListener('click', () => void this.gsJob?.finishEarly());
+  }
+
+  private gsDialogResolver: ((ok: boolean) => void) | null = null;
+
+  private askGenerateSplat(video: File, hasModel: boolean): Promise<boolean> {
+    byId('gs-dialog-copy').textContent = hasModel
+      ? `检测到视频「${video.name}」。要用它在本地生成 3D 高斯泼溅，还是只打开其他模型？`
+      : `用「${video.name}」在浏览器里训练 3D 高斯泼溅。请绕着物体缓慢拍 20 秒以上，并保持此标签页在前台。`;
+    byId('gs-dialog-skip').textContent = hasModel ? '只打开模型' : '取消';
+    const envLine = byId('gs-dialog-env');
+    const start = byId<HTMLButtonElement>('gs-dialog-start');
+    envLine.textContent = '正在检测 WebGPU…';
+    envLine.classList.remove('is-warn');
+    start.disabled = true;
+    this.gsDialog.classList.remove('hidden');
+    void checkGsEnvironment().then((info) => {
+      envLine.textContent = info.detail;
+      envLine.classList.toggle('is-warn', !info.ok);
+      start.disabled = !info.ok;
+    });
+    return new Promise((resolve) => {
+      this.gsDialogResolver = resolve;
+    });
+  }
+
+  private closeGsDialog(generate: boolean): void {
+    this.gsDialog.classList.add('hidden');
+    this.gsDialogResolver?.(generate);
+    this.gsDialogResolver = null;
+  }
+
+  private async generateSplat(video: File): Promise<void> {
+    const quality = byId<HTMLSelectElement>('gs-quality').value as GsQuality;
+    this.exitSketchfab();
+    this.showProgress(true, 0.01, '准备 3DGS 训练', true);
+    byId<HTMLButtonElement>('progress-finish').disabled = true;
+    const job = startSplatFromVideo(video, quality, (state) => {
+      this.showProgress(true, state.ratio, state.label, true);
+      byId<HTMLButtonElement>('progress-finish').disabled = !state.canFinish;
+    });
+    this.gsJob = job;
+    try {
+      const ply = await job.done;
+      downloadBlob(ply, ply.name);
+      const opened = await this.loadModel(() => this.loader.load([{ path: ply.name, file: ply }], this.onProgress), true);
+      if (opened) this.toast('3DGS 已生成，PLY 已下载到本地', 'success');
+    } catch (err) {
+      if (isAbortError(err)) {
+        this.toast('已取消 3DGS 生成');
+        return;
+      }
+      console.error(err);
+      this.toast(`3DGS 生成失败：${translateGsError(err)}`, 'error');
+    } finally {
+      this.gsJob = null;
+      this.showProgress(false, 1, '');
+    }
+  }
+
+  private setEmptySource(source: 'file' | 'sketchfab'): void {
+    const file = source === 'file';
+    byId('source-file').classList.toggle('is-active', file);
+    byId('source-sketchfab').classList.toggle('is-active', !file);
+    byId('source-file').setAttribute('aria-selected', String(file));
+    byId('source-sketchfab').setAttribute('aria-selected', String(!file));
+    byId('empty-file-pane').classList.toggle('hidden', !file);
+    byId('empty-sketchfab-pane').classList.toggle('hidden', file);
+    const sub = this.emptyState.querySelector('.empty-sub');
+    if (sub) {
+      sub.textContent = file
+        ? '拖放模型或视频到此处，或选择文件开始预览'
+        : '粘贴 Sketchfab 模型链接，使用官方预览效果与交互';
+    }
+    if (!file) byId<HTMLInputElement>('empty-sketchfab-url').focus();
+  }
+
+  private setDialogSource(source: 'file' | 'sketchfab'): void {
+    const file = source === 'file';
+    byId('dialog-source-file').classList.toggle('is-active', file);
+    byId('dialog-source-sketchfab').classList.toggle('is-active', !file);
+    byId('dialog-file-pane').classList.toggle('hidden', !file);
+    byId('dialog-sketchfab-pane').classList.toggle('hidden', file);
+    if (!file) queueMicrotask(() => byId<HTMLInputElement>('dialog-sketchfab-url').focus());
+  }
+
+  private openAddDialog(source: 'file' | 'sketchfab' = 'file'): void {
+    this.setDialogSource(source);
+    this.openDialog.classList.remove('hidden');
+    if (source === 'sketchfab') byId<HTMLInputElement>('dialog-sketchfab-url').focus();
+  }
+
+  private closeAddDialog(): void {
+    this.openDialog.classList.add('hidden');
   }
 
   private wireDragAndDrop(): void {
@@ -160,8 +338,20 @@ export class App {
 
   private wireKeyboard(): void {
     window.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !this.openDialog.classList.contains('hidden')) {
+        event.preventDefault();
+        this.closeAddDialog();
+        return;
+      }
+      if (event.key === 'Escape' && this.sketchfabActive) {
+        event.preventDefault();
+        this.returnToHome();
+        return;
+      }
+
       const target = event.target as HTMLElement | null;
       if (target && /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
+      if (this.sketchfabActive && event.key !== 'Tab') return;
 
       switch (event.key) {
         case 'Tab':
@@ -279,7 +469,14 @@ export class App {
     }
 
     const url = dt.getData('text/uri-list') || dt.getData('text/plain');
-    if (url && /^https?:\/\//.test(url.trim())) await this.loadFromUrl(url.trim());
+    if (url && /^https?:\/\//.test(url.trim())) {
+      const trimmed = url.trim().split('\n')[0]?.trim() ?? '';
+      if (isSketchfabInput(trimmed)) {
+        await this.loadSketchfab(trimmed);
+        return;
+      }
+      await this.loadFromUrl(trimmed);
+    }
   }
 
   /**
@@ -287,9 +484,11 @@ export class App {
    * an HDRI or a .cube onto the viewport and have it just work.
    */
   private async handleFiles(files: NamedFile[]): Promise<void> {
+    this.exitSketchfab();
     const envFile = files.find((f) => (ENV_EXTENSIONS as readonly string[]).includes(extensionOf(f.path)));
     const lutFile = files.find((f) => (LUT_EXTENSIONS as readonly string[]).includes(extensionOf(f.path)));
-    const modelFiles = files.filter((f) => f !== envFile && f !== lutFile);
+    const videos = files.filter((f) => f !== envFile && f !== lutFile && isVideoFileName(f.path, f.file.type));
+    const modelFiles = files.filter((f) => f !== envFile && f !== lutFile && !videos.includes(f));
 
     if (envFile) {
       try {
@@ -309,14 +508,84 @@ export class App {
       }
     }
 
+    if (videos.length > 0) {
+      const generate = await this.askGenerateSplat(videos[0].file, modelFiles.length > 0);
+      if (generate) {
+        await this.generateSplat(videos[0].file);
+        return;
+      }
+    }
+
     if (modelFiles.length > 0) await this.loadModel(() => this.loader.load(modelFiles, this.onProgress));
   }
 
   private async loadFromUrl(url: string): Promise<void> {
+    if (isSketchfabInput(url)) {
+      await this.loadSketchfab(url);
+      return;
+    }
     await this.loadModel(() => this.loader.loadFromUrl(url, this.onProgress));
   }
 
+  private async loadSketchfab(raw: string): Promise<void> {
+    this.showProgress(true, 0.15, '解析 Sketchfab 链接');
+    try {
+      const target = await resolveSketchfabModel(raw);
+      this.enterSketchfab(target.title, target.embedSrc);
+      this.toast('已打开 Sketchfab 官方预览', 'success');
+    } catch (err) {
+      console.error(err);
+      this.toast(`Sketchfab 载入失败：${describe(err)}`, 'error');
+    } finally {
+      this.showProgress(false, 1, '');
+    }
+  }
+
+  private enterSketchfab(title: string, embedSrc: string): void {
+    this.closeAddDialog();
+    this.sketchfabActive = true;
+    this.handheld.disable();
+    document.body.classList.add('sketchfab-mode');
+    this.emptyState.classList.add('hidden');
+    this.viewer.pause();
+    this.sketchfabFrame.src = embedSrc;
+    this.sketchfabStage.classList.remove('hidden');
+    this.modelName.textContent = title;
+    this.timeline.classList.add('hidden');
+    byId('btn-sketchfab').classList.add('is-active');
+  }
+
+  private reloadSketchfab(): void {
+    const src = this.sketchfabFrame.src;
+    if (!src || src === 'about:blank') return;
+    this.sketchfabFrame.src = src;
+  }
+
+  private returnToHome(): void {
+    this.closeAddDialog();
+    this.exitSketchfab();
+    this.emptyState.classList.remove('hidden');
+    this.modelName.textContent = '';
+    this.setEmptySource('file');
+  }
+
+  private exitSketchfab(): void {
+    if (!this.sketchfabActive) return;
+    this.sketchfabActive = false;
+    document.body.classList.remove('sketchfab-mode');
+    this.sketchfabFrame.src = 'about:blank';
+    this.sketchfabStage.classList.add('hidden');
+    byId('btn-sketchfab').classList.remove('is-active');
+    this.viewer.resume();
+    this.viewer.resize();
+    if (!this.viewer.stats) {
+      this.emptyState.classList.remove('hidden');
+      this.modelName.textContent = '';
+    }
+  }
+
   private loadDemo(): void {
+    this.exitSketchfab();
     this.viewer.setModel(createDemoScene());
     this.emptyState.classList.add('hidden');
     this.modelName.textContent = '示例 · 材质展示';
@@ -324,7 +593,11 @@ export class App {
     this.toast('已载入示例场景', 'success');
   }
 
-  private async loadModel(run: () => Promise<Awaited<ReturnType<ModelLoader['load']>>>): Promise<void> {
+  private async loadModel(
+    run: () => Promise<Awaited<ReturnType<ModelLoader['load']>>>,
+    silent = false,
+  ): Promise<boolean> {
+    this.exitSketchfab();
     this.showProgress(true, 0, '准备中');
     try {
       const result = await run();
@@ -334,10 +607,12 @@ export class App {
       this.emptyState.classList.add('hidden');
       this.modelName.textContent = result.object.name || '未命名模型';
       this.refreshTimeline();
-      this.toast(`已载入 ${result.format} 模型`, 'success');
+      if (!silent) this.toast(`已载入 ${result.format} 模型`, 'success');
+      return true;
     } catch (err) {
       console.error(err);
       this.toast(`载入失败：${describe(err)}`, 'error');
+      return false;
     } finally {
       this.showProgress(false, 1, '');
     }
@@ -347,17 +622,22 @@ export class App {
     this.showProgress(true, ratio, label);
   };
 
-  private showProgress(visible: boolean, ratio: number, label: string): void {
+  private showProgress(visible: boolean, ratio: number, label: string, train = false): void {
     this.progress.classList.toggle('hidden', !visible);
     const fill = this.progress.querySelector<HTMLElement>('.progress-fill');
     const text = this.progress.querySelector('.progress-text');
-    if (fill) fill.style.width = `${Math.round(ratio * 100)}%`;
+    if (fill) fill.style.width = `${Math.round(Math.min(1, Math.max(0, ratio)) * 100)}%`;
     if (text && label) text.textContent = label;
+    byId('progress-actions').classList.toggle('hidden', !visible || !train);
   }
 
   // ---------------------------------------------------------------- capture
 
   private async screenshot(): Promise<void> {
+    if (this.sketchfabActive) {
+      this.toast('Sketchfab 预览请使用其自带的全屏与截图，或回到本地模型后再截图');
+      return;
+    }
     try {
       const transparent = this.viewer.settings.env.background === 'transparent';
       const blob = await this.viewer.captureImage(2, transparent);
@@ -369,6 +649,10 @@ export class App {
   }
 
   private async toggleRecording(): Promise<void> {
+    if (this.sketchfabActive) {
+      this.toast('Sketchfab 预览无法用本机画布录屏，请先打开本地模型');
+      return;
+    }
     const button = byId('btn-record');
 
     if (this.recorder.isRecording) {
@@ -454,14 +738,18 @@ function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError';
+}
+
 function format(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return String(value);
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(Math.round(value));
 }
 
 function timestamp(): string {
   const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 }

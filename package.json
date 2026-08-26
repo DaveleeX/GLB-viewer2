@@ -17,11 +17,15 @@
   },
   "dependencies": {
     "@sparkjsdev/spark": "^2.1.0",
+    "qrcode": "1.5.4",
+    "splat.js": "github:arrival-space/splat.js",
     "three": "^0.185.1"
   },
   "devDependencies": {
+    "@types/qrcode": "1.5.5",
     "@types/three": "^0.185.4",
     "playwright": "^1.62.1",
+    "selfsigned": "^2.4.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.2"
   }

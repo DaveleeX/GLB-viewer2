@@ -21,6 +21,7 @@ import {
 } from './channels';
 import type { LoadResult } from '../loaders/ModelLoader';
 import { extensionOf } from '../loaders/fileMap';
+import { HandheldRig } from './HandheldRig';
 
 export interface ModelStats {
   format: string;
@@ -93,12 +94,15 @@ export class Viewer {
   private originalMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
   private wireOverlay: THREE.Group | null = null;
   private matcapTexture: THREE.Texture | null = null;
+  private splatFloaterCache: SplatFloaterCache | null = null;
+  private splatFloaterRaf = 0;
 
   stats: ModelStats | null = null;
   onStatsChange: ((stats: ModelStats | null) => void) | null = null;
   onFrame: ((time: number, duration: number) => void) | null = null;
   onClipChange: ((near: number, far: number) => void) | null = null;
   onSelect: ((object: THREE.Object3D | null) => void) | null = null;
+  readonly handheld: HandheldRig;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -133,6 +137,7 @@ export class Viewer {
     this.controls.screenSpacePanning = true;
     this.controls.minDistance = 0.02;
     this.controls.maxDistance = 400;
+    this.handheld = new HandheldRig(this);
 
     this.scene.add(this.modelRoot, this.helpers);
 
@@ -174,6 +179,14 @@ export class Viewer {
     this.renderer.setAnimationLoop(() => this.tick());
   }
 
+  pause(): void {
+    this.renderer.setAnimationLoop(null);
+  }
+
+  resume(): void {
+    this.renderer.setAnimationLoop(() => this.tick());
+  }
+
   private tick(): void {
     this.timer.update();
     const delta = this.timer.getDelta();
@@ -185,7 +198,12 @@ export class Viewer {
       }
     }
 
-    this.controls.update();
+    this.handheld.update();
+    if (this.handheld.driving) {
+      this.controls.autoRotate = false;
+    } else {
+      this.controls.update();
+    }
     this.postfx.render(delta);
   }
 
@@ -490,6 +508,8 @@ export class Viewer {
   setModel(result: LoadResult): void {
     this.clearModel();
     this.currentModel = result;
+    this.settings.scene.splatFloater = 0;
+    this.splatFloaterCache = null;
 
     this.modelRoot.add(result.object);
     this.normalizeAndGround(result.object);
@@ -525,6 +545,9 @@ export class Viewer {
 
     this.currentModel?.cleanup();
     this.currentModel = null;
+    this.splatFloaterCache = null;
+    if (this.splatFloaterRaf) cancelAnimationFrame(this.splatFloaterRaf);
+    this.splatFloaterRaf = 0;
     this.stats = null;
     this.onStatsChange?.(null);
   }
@@ -780,6 +803,40 @@ export class Viewer {
     this.scene.add(spark);
   }
 
+  /** Hide far Gaussians around a splat. 0 restores the original cloud. */
+  setSplatFloaterTrim(amount: number): void {
+    this.settings.scene.splatFloater = Math.min(1, Math.max(0, amount));
+    if (this.splatFloaterRaf) return;
+    this.splatFloaterRaf = requestAnimationFrame(() => {
+      this.splatFloaterRaf = 0;
+      this.applySplatFloaterTrim();
+    });
+  }
+
+  private applySplatFloaterTrim(): void {
+    const mesh = this.currentModel?.kind === 'splat' ? asSplatMesh(this.currentModel.object) : null;
+    const packed = mesh?.packedSplats;
+    if (!mesh || !packed || packed.numSplats < 8) return;
+
+    const cache = this.splatFloaterCache ?? (this.splatFloaterCache = buildSplatFloaterCache(packed));
+    const t = this.settings.scene.splatFloater;
+    const maxDist = t <= 0.001 ? Infinity : cache.p70 * (6.2 - 4.7 * t);
+
+    for (let i = 0; i < packed.numSplats; i++) {
+      const splat = packed.getSplat(i);
+      packed.setSplat(
+        i,
+        splat.center,
+        splat.scales,
+        splat.quaternion,
+        cache.dists[i] > maxDist ? 0 : cache.opacities[i],
+        splat.color,
+      );
+    }
+    packed.needsUpdate = true;
+    mesh.needsUpdate = true;
+  }
+
   /** The loaded model's root, or null when the viewer is empty. */
   get modelObject(): THREE.Object3D | null {
     return this.currentModel?.object ?? null;
@@ -841,6 +898,7 @@ export class Viewer {
     this.controls.maxDistance = distance * 12;
     this.applyClipPlanes(distance, maxDim);
     this.controls.update();
+    if (this.handheld.connected) this.handheld.onHostFramed();
   }
 
   /**
@@ -1107,4 +1165,119 @@ function disposeObject(root: THREE.Object3D): void {
       disposable.dispose();
     }
   });
+}
+
+interface SplatFloaterCache {
+  opacities: Float32Array;
+  dists: Float32Array;
+  p70: number;
+}
+
+interface PackedSplatApi {
+  numSplats: number;
+  needsUpdate: boolean;
+  getSplat(index: number): {
+    center: THREE.Vector3;
+    scales: THREE.Vector3;
+    quaternion: THREE.Quaternion;
+    opacity: number;
+    color: THREE.Color;
+  };
+  setSplat(
+    index: number,
+    center: THREE.Vector3,
+    scales: THREE.Vector3,
+    quaternion: THREE.Quaternion,
+    opacity: number,
+    color: THREE.Color,
+  ): void;
+  forEachSplat(
+    callback: (
+      index: number,
+      center: THREE.Vector3,
+      scales: THREE.Vector3,
+      quaternion: THREE.Quaternion,
+      opacity: number,
+      color: THREE.Color,
+    ) => void,
+  ): void;
+}
+
+function asSplatMesh(object: THREE.Object3D): (THREE.Object3D & { packedSplats?: PackedSplatApi; needsUpdate: boolean }) | null {
+  const mesh = object as THREE.Object3D & { packedSplats?: PackedSplatApi; needsUpdate: boolean };
+  return mesh.packedSplats ? mesh : null;
+}
+
+function buildSplatFloaterCache(packed: PackedSplatApi): SplatFloaterCache {
+  const n = packed.numSplats;
+  const opacities = new Float32Array(n);
+  const xs = new Float32Array(n);
+  const ys = new Float32Array(n);
+  const zs = new Float32Array(n);
+  packed.forEachSplat((i, center, _scales, _quat, opacity) => {
+    opacities[i] = opacity;
+    xs[i] = center.x;
+    ys[i] = center.y;
+    zs[i] = center.z;
+  });
+
+  const solid: number[] = [];
+  for (let i = 0; i < n; i++) if (opacities[i] >= 0.16) solid.push(i);
+  const ids = solid.length >= 32 ? solid : [...Array(n).keys()].filter((i) => opacities[i] > 0.04);
+  const [cx, cy, cz] = densestSplatCenter(xs, ys, zs, ids);
+
+  const dists = new Float32Array(n);
+  const solidDists: number[] = [];
+  for (let i = 0; i < n; i++) {
+    dists[i] = Math.hypot(xs[i] - cx, ys[i] - cy, zs[i] - cz);
+    if (opacities[i] >= 0.16) solidDists.push(dists[i]);
+  }
+  solidDists.sort((a, b) => a - b);
+  const p70 = solidDists[Math.min(solidDists.length - 1, Math.floor(solidDists.length * 0.7))] || 1;
+  return { opacities, dists, p70 };
+}
+
+function densestSplatCenter(
+  xs: Float32Array,
+  ys: Float32Array,
+  zs: Float32Array,
+  ids: number[],
+): [number, number, number] {
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  for (const i of ids) {
+    minX = Math.min(minX, xs[i]);
+    minY = Math.min(minY, ys[i]);
+    minZ = Math.min(minZ, zs[i]);
+    maxX = Math.max(maxX, xs[i]);
+    maxY = Math.max(maxY, ys[i]);
+    maxZ = Math.max(maxZ, zs[i]);
+  }
+  const cell = Math.max(1e-4, Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 18);
+  const bins = new Map<number, { n: number; x: number; y: number; z: number }>();
+  const gx = Math.max(1, Math.ceil((maxX - minX) / cell) + 1);
+  const gy = Math.max(1, Math.ceil((maxY - minY) / cell) + 1);
+  for (const i of ids) {
+    const xi = Math.min(gx - 1, Math.max(0, Math.floor((xs[i] - minX) / cell)));
+    const yi = Math.min(gy - 1, Math.max(0, Math.floor((ys[i] - minY) / cell)));
+    const zi = Math.max(0, Math.floor((zs[i] - minZ) / cell));
+    const key = xi + yi * gx + zi * gx * gy;
+    const bin = bins.get(key);
+    if (bin) {
+      bin.n++;
+      bin.x += xs[i];
+      bin.y += ys[i];
+      bin.z += zs[i];
+    } else {
+      bins.set(key, { n: 1, x: xs[i], y: ys[i], z: zs[i] });
+    }
+  }
+  let best: { n: number; x: number; y: number; z: number } | null = null;
+  for (const bin of bins.values()) if (!best || bin.n > best.n) best = bin;
+  if (!best) return [0, 0, 0];
+  return [best.x / best.n, best.y / best.n, best.z / best.n];
 }

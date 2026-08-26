@@ -36,36 +36,113 @@
       <symbol id="i-cube" viewBox="0 0 24 24">
         <path d="M12 2.8 21 7.4v9.2L12 21.2 3 16.6V7.4z" /><path d="M3 7.4 12 12m0 0 9-4.6M12 12v9.2" />
       </symbol>
+      <symbol id="i-link" viewBox="0 0 24 24">
+        <path d="M10 13a5 5 0 0 0 7.54.54l1.92-1.92a5 5 0 0 0-7.07-7.07L10.8 6.14" />
+        <path d="M14 11a5 5 0 0 0-7.54-.54L4.54 12.4a5 5 0 0 0 7.07 7.07L13.2 17.86" />
+      </symbol>
     </svg>
 
     <div id="app">
       <canvas id="viewport"></canvas>
+
+      <div id="sketchfab-stage" class="sketchfab-stage hidden">
+        <iframe
+          id="sketchfab-frame"
+          title="Sketchfab 预览"
+          allow="autoplay; fullscreen; xr-spatial-tracking; gyroscope; accelerometer"
+          allowfullscreen
+        ></iframe>
+        <button id="btn-close-sketchfab" type="button" class="sketchfab-exit" title="关闭预览，返回首页" aria-label="关闭预览，返回首页">
+          <svg class="ico"><use href="#i-close" /></svg>
+        </button>
+      </div>
 
       <!-- Empty state / primary upload call to action -->
       <div id="empty-state" class="empty-state">
         <div class="empty-card">
           <svg class="empty-icon"><use href="#i-cube" /></svg>
           <h1>通用模型预览器</h1>
-          <p class="empty-sub">拖放模型文件到此处，或选择文件开始预览</p>
-          <div class="empty-actions">
-            <button id="empty-open" class="btn btn-primary">
+          <p class="empty-sub">拖放模型或视频到此处，或选择文件开始预览</p>
+          <div class="source-toggle" role="tablist" aria-label="添加模型方式">
+            <button id="source-file" type="button" class="is-active" role="tab" aria-selected="true">本地文件</button>
+            <button id="source-sketchfab" type="button" role="tab" aria-selected="false">Sketchfab 链接</button>
+          </div>
+          <div id="empty-file-pane">
+            <div class="empty-actions">
+              <button id="empty-open" class="btn btn-primary">
+                <svg class="ico"><use href="#i-upload" /></svg>
+                选择模型文件
+              </button>
+              <button id="empty-sample" class="btn">加载示例场景</button>
+            </div>
+            <p class="empty-formats">
+              glTF · GLB · OBJ · FBX · STL · PLY · 3MF · DAE · USDZ · VOX
+              <br />
+              高斯泼溅 SPZ · SPLAT · KSPLAT · SOG · PLY
+              <br />
+              视频 MOV · MP4 · WEBM 可生成本地 3DGS
+              <br />
+              <span class="dim">支持多选：模型 + .bin + 贴图 / .obj + .mtl，也可直接拖入整个文件夹</span>
+            </p>
+          </div>
+          <div id="empty-sketchfab-pane" class="hidden">
+            <form id="empty-sketchfab-form" class="sketchfab-form">
+              <input
+                id="empty-sketchfab-url"
+                type="text"
+                spellcheck="false"
+                autocomplete="off"
+                placeholder="https://sketchfab.com/3d-models/…"
+              />
+              <button id="empty-sketchfab-submit" class="btn btn-primary" type="submit">载入预览</button>
+            </form>
+            <p class="empty-formats">
+              粘贴 Sketchfab 模型页链接，将在预览器中打开官方查看器
+              <br />
+              <span class="dim">保留 Sketchfab 的材质、标注、旋转缩放与 VR 等交互</span>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div id="open-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="open-dialog-title">
+        <div class="dialog-backdrop" data-dialog-dismiss></div>
+        <div class="dialog-card">
+          <div class="dialog-head">
+            <h2 id="open-dialog-title">打开模型</h2>
+            <button id="open-dialog-close" class="icon-btn" type="button" title="关闭">
+              <svg class="ico"><use href="#i-close" /></svg>
+            </button>
+          </div>
+          <div class="source-toggle" role="tablist" aria-label="打开方式">
+            <button id="dialog-source-file" type="button" class="is-active" role="tab">本地文件</button>
+            <button id="dialog-source-sketchfab" type="button" role="tab">Sketchfab 链接</button>
+          </div>
+          <div id="dialog-file-pane">
+            <p class="dialog-copy">从本机选择网格、泼溅、视频（生成 3DGS）或配套贴图，也可之后直接拖到画布上。</p>
+            <button id="dialog-open-files" class="btn btn-primary" type="button">
               <svg class="ico"><use href="#i-upload" /></svg>
               选择模型文件
             </button>
-            <button id="empty-sample" class="btn">加载示例场景</button>
           </div>
-          <p class="empty-formats">
-            glTF · GLB · OBJ · FBX · STL · PLY · 3MF · DAE · USDZ · VOX
-            <br />
-            高斯泼溅 SPZ · SPLAT · KSPLAT · SOG · PLY
-            <br />
-            <span class="dim">支持多选：模型 + .bin + 贴图 / .obj + .mtl，也可直接拖入整个文件夹</span>
-          </p>
+          <div id="dialog-sketchfab-pane" class="hidden">
+            <p class="dialog-copy">粘贴 Sketchfab 模型链接，使用官方预览效果与交互。</p>
+            <form id="dialog-sketchfab-form" class="sketchfab-form">
+              <input
+                id="dialog-sketchfab-url"
+                type="text"
+                spellcheck="false"
+                autocomplete="off"
+                placeholder="https://sketchfab.com/3d-models/…"
+              />
+              <button class="btn btn-primary" type="submit">载入预览</button>
+            </form>
+          </div>
         </div>
       </div>
 
       <!-- Drag hover overlay -->
-      <div id="drop-overlay" class="drop-overlay"><div class="drop-inner">松开以载入模型</div></div>
+      <div id="drop-overlay" class="drop-overlay"><div class="drop-inner">松开以载入模型或用视频生成 3DGS</div></div>
 
       <!-- Top bar -->
       <header class="topbar">
@@ -76,6 +153,9 @@
         <div class="topbar-right">
           <button id="btn-open" class="btn btn-ghost" title="打开模型">
             <svg class="ico"><use href="#i-upload" /></svg><span class="btn-label">打开</span>
+          </button>
+          <button id="btn-sketchfab" class="btn btn-ghost" title="用 Sketchfab 链接预览">
+            <svg class="ico"><use href="#i-link" /></svg><span class="btn-label">Sketchfab</span>
           </button>
           <button id="btn-reset" class="btn btn-ghost" title="重置视角">
             <svg class="ico"><use href="#i-reset" /></svg>
@@ -112,6 +192,35 @@
           <div class="spinner"></div>
           <div class="progress-text">载入中…</div>
           <div class="progress-track"><div class="progress-fill"></div></div>
+          <div id="progress-actions" class="progress-actions hidden">
+            <button id="progress-finish" class="btn" type="button">提前完成并预览</button>
+            <button id="progress-cancel" class="btn" type="button">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="gs-dialog" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="gs-dialog-title">
+        <div class="dialog-backdrop" data-gs-dismiss></div>
+        <div class="dialog-card">
+          <div class="dialog-head">
+            <h2 id="gs-dialog-title">从视频生成 3DGS</h2>
+            <button id="gs-dialog-close" class="icon-btn" type="button" title="关闭">
+              <svg class="ico"><use href="#i-close" /></svg>
+            </button>
+          </div>
+          <p id="gs-dialog-copy" class="dialog-copy">在浏览器里本地训练高斯泼溅，不会上传。需要 WebGPU，请保持这个标签页在前台。</p>
+          <p id="gs-dialog-env" class="dialog-env">正在检测 WebGPU…</p>
+          <label class="gs-quality">
+            <span>质量</span>
+            <select id="gs-quality">
+              <option value="draft">草稿（较快，约数分钟）</option>
+              <option value="standard">标准（更清晰，更久）</option>
+            </select>
+          </label>
+          <div class="empty-actions" style="margin-top: 16px">
+            <button id="gs-dialog-start" class="btn btn-primary" type="button">开始生成</button>
+            <button id="gs-dialog-skip" class="btn" type="button">不用视频</button>
+          </div>
         </div>
       </div>
 

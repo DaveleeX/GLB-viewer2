@@ -8,9 +8,13 @@ const outDir = 'smoke-out';
 await mkdir(outDir, { recursive: true });
 
 const browser = await chromium.launch({
-  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--ignore-certificate-errors'],
 });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+const page = await browser.newPage({
+  viewport: { width: 1440, height: 900 },
+  acceptDownloads: true,
+  ignoreHTTPSErrors: true,
+});
 
 const errors = [];
 const warnings = [];
@@ -36,6 +40,16 @@ await step('page loads', async () => {
 await step('empty state renders', async () => {
   await page.waitForSelector('#empty-state:not(.hidden)');
   await page.screenshot({ path: `${outDir}/01-empty.png` });
+});
+
+await step('sketchfab source toggle', async () => {
+  await page.click('#source-sketchfab');
+  await page.waitForSelector('#empty-sketchfab-pane:not(.hidden)');
+  await page.fill('#empty-sketchfab-url', 'not-a-sketchfab-link');
+  await page.click('#empty-sketchfab-submit');
+  await page.waitForSelector('.toast.is-error');
+  await page.click('#source-file');
+  await page.waitForSelector('#empty-file-pane:not(.hidden)');
 });
 
 await step('demo scene loads', async () => {
@@ -139,6 +153,20 @@ await step('near / far clip can be set by hand', async () => {
   });
   await page.waitForTimeout(250);
   await page.screenshot({ path: `${outDir}/05b-clip.png` });
+});
+
+await step('handheld camera panel exposes QR remote', async () => {
+  const panel = page.locator('.panel', { hasText: '相机' }).first();
+  const copy = await panel.textContent();
+  if (!copy?.includes('手机云台')) throw new Error('camera panel is missing the handheld section');
+  await panel.locator('.ctrl', { hasText: '启用手机遥控' }).locator('button.switch').click();
+  await page.waitForSelector('.handheld-box:not([hidden]) canvas.handheld-qr:not([hidden])');
+  const health = await page.evaluate(async () => {
+    const res = await fetch('/__mv_cam/health');
+    return res.ok;
+  });
+  if (!health) throw new Error('remote camera hub is not mounted');
+  await page.screenshot({ path: `${outDir}/05c-handheld.png` });
 });
 
 await step('canvas is actually drawing', async () => {

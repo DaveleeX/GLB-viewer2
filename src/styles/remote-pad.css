@@ -1,0 +1,104 @@
+body.is-remote-pad {
+  overflow: auto;
+  background: #070b12;
+}
+
+.pad {
+  box-sizing: border-box;
+  min-height: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 28px 20px 40px;
+  color: #e8eefc;
+  font-family: system-ui, sans-serif;
+  text-align: center;
+}
+
+.pad-kicker {
+  margin: 0 0 6px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: #7fdcd6;
+}
+
+.pad h1 {
+  margin: 0 0 10px;
+  font-size: 28px;
+  font-weight: 650;
+}
+
+.pad-status {
+  margin: 0 0 22px;
+  color: #9aa8c3;
+  line-height: 1.5;
+}
+
+.pad-main {
+  width: 100%;
+  height: 52px;
+  border: 0;
+  border-radius: 14px;
+  background: #3d7cff;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.pad-link {
+  width: 100%;
+  height: 44px;
+  margin-top: 10px;
+  border: 1px solid rgba(127, 220, 214, 0.45);
+  border-radius: 12px;
+  background: rgba(127, 220, 214, 0.1);
+  color: #7fdcd6;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pad-link[hidden] {
+  display: none;
+}
+
+.pad-actions,
+.pad-dolly {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.pad-actions {
+  grid-template-columns: 1fr 1fr;
+}
+
+.pad-dolly {
+  grid-template-columns: 72px 1fr 72px;
+  align-items: center;
+}
+
+.pad-actions button,
+.pad-dolly button {
+  height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  color: inherit;
+  font-size: 15px;
+}
+
+.pad-actions button.is-on {
+  background: #c44c4c;
+  border-color: transparent;
+}
+
+.pad-hint {
+  margin: 22px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #8f9bb3;
+}
+
+.pad input[type='range'] {
+  width: 100%;
+}
