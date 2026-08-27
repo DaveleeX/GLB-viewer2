@@ -57,7 +57,7 @@ npm run hdri
 > 文件名已做通用化处理，但**图像内容本身仍受原始授权约束**（其中包含 Greyscalegorilla 等商业素材）。若要公开发布本项目，请先确认这些全景图的授权范围，或替换为 [Poly Haven](https://polyhaven.com/hdris) 等 CC0 素材。
 
 ## 功能
-
+![demo](./功能截图.png)
 - **渲染** — ACES Filmic 色调映射、程序化 IBL 环境（8 组）+ 内置 HDR 全景（5 张）+ 自定义 HDR/EXR、环境旋转与强度、渐变/纯色/环境/透明背景、雾效
 - **灯光** — 主光 / 补光 / 轮廓光三点布光，PCF 柔和阴影，地面接影板，无限网格
 - **后期** — GTAO 环境光遮蔽、Bloom、3D LUT、Lift/Gamma/Gain 调色、饱和度与对比度、暗角、SMAA / FXAA
